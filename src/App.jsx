@@ -1,5 +1,3 @@
-import { useQuery } from "convex/react";
-import { api } from "../convex/_generated/api";
 import { Toaster } from "sonner";
 import { WeatherApp } from "./WeatherApp";
 

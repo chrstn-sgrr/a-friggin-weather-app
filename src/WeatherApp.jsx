@@ -1,100 +1,85 @@
 import { useState, useEffect } from "react";
-import { useQuery, useAction } from "convex/react";
-import { api } from "../convex/_generated/api";
 import { toast } from "sonner";
 
-interface WeatherData {
-  location: {
-    name: string;
-    region: string;
-    country: string;
-    localtime: string;
-  };
-  current: {
-    temp_c: number;
-    temp_f: number;
-    condition: {
-      text: string;
-      icon: string;
-    };
-    wind_kph: number;
-    humidity: number;
-    uv: number;
-    feelslike_c: number;
-  };
-  air_quality?: {
-    pm2_5: number;
-    pm10: number;
-    o3: number;
-  };
-}
-
-interface ForecastData {
-  location: WeatherData['location'];
-  current: WeatherData['current'];
-  forecast: {
-    forecastday: Array<{
-      date: string;
-      day: {
-        maxtemp_c: number;
-        mintemp_c: number;
-        condition: {
-          text: string;
-          icon: string;
-        };
-        daily_chance_of_rain: number;
-      };
-      astro: {
-        sunrise: string;
-        sunset: string;
-      };
-      hour: Array<{
-        time: string;
-        temp_c: number;
-        condition: {
-          text: string;
-          icon: string;
-        };
-        chance_of_rain: number;
-      }>;
-    }>;
-  };
-  alerts?: {
-    alert: Array<{
-      headline: string;
-      desc: string;
-      severity: string;
-    }>;
-  };
-}
+const NCR_CITIES = [
+  "Manila",
+  "Quezon City", 
+  "Makati",
+  "Pasig",
+  "Taguig",
+  "Mandaluyong",
+  "Marikina",
+  "Pasay",
+  "Caloocan",
+  "Las Piñas",
+  "Muntinlupa",
+  "Parañaque",
+  "Valenzuela",
+  "Malabon",
+  "Navotas",
+  "San Juan",
+  "Pateros"
+];
 
 export function WeatherApp() {
   const [selectedCity, setSelectedCity] = useState("Manila");
-  const [currentWeather, setCurrentWeather] = useState<WeatherData | null>(null);
-  const [forecast, setForecast] = useState<ForecastData | null>(null);
+  const [currentWeather, setCurrentWeather] = useState(null);
+  const [forecast, setForecast] = useState(null);
   const [loading, setLoading] = useState(false);
   const [forecastLoading, setForecastLoading] = useState(false);
 
-  const cities = useQuery(api.weather.getNCRCities) || [];
-  const cachedWeather = useQuery(api.weather.getCachedWeather, { city: selectedCity });
-  const getCurrentWeather = useAction(api.weatherActions.getCurrentWeather);
-  const getForecast = useAction(api.weatherActions.getForecast);
-
   useEffect(() => {
+    const cachedWeather = getCachedWeather(selectedCity);
     if (cachedWeather) {
       setCurrentWeather(cachedWeather);
     } else {
       fetchCurrentWeather();
     }
-  }, [selectedCity, cachedWeather]);
+  }, [selectedCity]);
+
+  const getCachedWeather = (city) => {
+    const cacheKey = `weather_${city}`;
+    const cached = localStorage.getItem(cacheKey);
+    
+    if (cached) {
+      const { data, timestamp } = JSON.parse(cached);
+      // Check if cache is less than 10 minutes old
+      if (Date.now() - timestamp < 10 * 60 * 1000) {
+        return data;
+      }
+    }
+    return null;
+  };
+
+  const setCachedWeather = (city, data) => {
+    const cacheKey = `weather_${city}`;
+    localStorage.setItem(cacheKey, JSON.stringify({
+      data,
+      timestamp: Date.now()
+    }));
+  };
 
   const fetchCurrentWeather = async () => {
     if (!selectedCity) return;
     
     setLoading(true);
     try {
-      const data = await getCurrentWeather({ city: selectedCity });
+      const apiKey = import.meta.env.VITE_WEATHER_API_KEY;
+      if (!apiKey) {
+        throw new Error("Weather API key not configured");
+      }
+
+      const response = await fetch(
+        `https://api.weatherapi.com/v1/current.json?key=${apiKey}&q=${selectedCity}&aqi=yes`
+      );
+
+      if (!response.ok) {
+        throw new Error(`Weather API error: ${response.status}`);
+      }
+
+      const data = await response.json();
       setCurrentWeather(data);
+      setCachedWeather(selectedCity, data);
     } catch (error) {
       toast.error("Failed to fetch weather data");
       console.error(error);
@@ -108,7 +93,20 @@ export function WeatherApp() {
     
     setForecastLoading(true);
     try {
-      const data = await getForecast({ city: selectedCity, days: 5 });
+      const apiKey = import.meta.env.VITE_WEATHER_API_KEY;
+      if (!apiKey) {
+        throw new Error("Weather API key not configured");
+      }
+
+      const response = await fetch(
+        `https://api.weatherapi.com/v1/forecast.json?key=${apiKey}&q=${selectedCity}&days=5&aqi=yes&alerts=yes`
+      );
+
+      if (!response.ok) {
+        throw new Error(`Weather API error: ${response.status}`);
+      }
+
+      const data = await response.json();
       setForecast(data);
     } catch (error) {
       toast.error("Failed to fetch forecast data");
@@ -118,7 +116,7 @@ export function WeatherApp() {
     }
   };
 
-  const formatTime = (timeString: string) => {
+  const formatTime = (timeString) => {
     return new Date(timeString).toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit',
@@ -126,7 +124,7 @@ export function WeatherApp() {
     });
   };
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       weekday: 'short',
       month: 'short',
@@ -146,7 +144,7 @@ export function WeatherApp() {
           onChange={(e) => setSelectedCity(e.target.value)}
           className="w-full md:w-auto px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
         >
-          {cities.map((city) => (
+          {NCR_CITIES.map((city) => (
             <option key={city} value={city}>
               {city}
             </option>
